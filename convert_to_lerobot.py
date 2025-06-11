@@ -93,7 +93,7 @@ def extract_action_vector(actions_dict):
     
     return np.array(action_parts, dtype=np.float32)
 
-def convert_episode(input_episode_dir: Path, episode_idx: int, output_dir: Path, fps: float) -> Dict[str, Any]:
+def convert_episode(input_episode_dir: Path, episode_idx: int, output_dir: Path, fps: float, task_map: Dict[str, int] = None) -> Dict[str, Any]:
     """转换单个episode"""
     print(f"转换episode {episode_idx}...")
     
@@ -123,10 +123,14 @@ def convert_episode(input_episode_dir: Path, episode_idx: int, output_dir: Path,
         color_files = []
     
     for frame_idx, frame_data in enumerate(data_frames):
+        # 确定task_index
+        task_description = task_info.get("goal", "default_task") if task_info else "default_task"
+        current_task_index = task_map.get(task_description, 0) if task_map else 0
+        
         processed_frame = {
             "episode_index": episode_idx,
-            "frame_index": frame_idx,
-            "timestamp": frame_idx / fps,  # 根据fps计算时间戳
+            "timestamp": frame_idx / fps,  # 时间戳必须与视频帧精确对应：第frame_idx帧 = frame_idx/fps秒
+            "task_index": current_task_index,
         }
         
         # 添加states数据作为observation.state
@@ -163,8 +167,16 @@ def convert_episode(input_episode_dir: Path, episode_idx: int, output_dir: Path,
                 # 如果已经是列表
                 processed_frame["action"] = extract_action_vector(actions)
         
-        # 添加episode结束标志
+        # 添加episode结束标志和next.reward
         processed_frame["next.done"] = frame_idx == episode_length - 1
+        processed_frame["next.reward"] = 0.0  # 添加默认reward
+        
+        # 为了兼容GR00T格式，添加任务描述相关字段
+        if task_info and "goal" in task_info:
+            processed_frame["annotation.human.action.task_description"] = task_info["goal"]
+        
+        # 添加annotation validity字段，表示人工标注的有效性
+        processed_frame["annotation.human.validity"] = 1
         
         frames_data.append(processed_frame)
     
@@ -213,6 +225,8 @@ def create_videos_from_images(input_dir: Path, output_videos_dir: Path, episode_
         video_writer = cv2.VideoWriter(str(video_path), fourcc, fps, (width, height))
         
         try:
+            # 按顺序写入图像，确保视频帧索引与原始frame_idx对应
+            # 第frame_idx张图像 → 视频第frame_idx帧 → timestamp = frame_idx/fps
             for img_path in image_files:
                 img = cv2.imread(str(img_path))
                 if img is not None:
@@ -241,13 +255,8 @@ def create_parquet_files(episode_data: List[Dict], output_data_dir: Path, videos
             frame_data = frame.copy()
             frame_data["index"] = global_index
             
-            # 添加视频引用（如果有图像）
+            # 删除图像路径字段，因为parquet中不存储图像路径
             if "image_path" in frame_data:
-                video_path = f"videos/chunk-000/observation.images.main/episode_{episode_idx:06d}.mp4"
-                frame_data["observation.images.main"] = {
-                    "path": video_path,
-                    "timestamp": frame["timestamp"]
-                }
                 del frame_data["image_path"]  # 删除临时字段
             
             all_frames.append(frame_data)
@@ -305,24 +314,15 @@ def create_metadata_files(episode_data: List[Dict], output_dir: Path, dataset_na
                 "shape": [action_dim],
                 "names": [f"action{i}" for i in range(action_dim)]
             },
-            "observation.images.main": {
-                "dtype": "video",
-                "shape": [480, 640, 3],  # 根据实际图像尺寸调整
-                "names": ["height", "width", "channel"],
-                "info": {
-                    "video.fps": fps,
-                    "video.codec": "avc1",
-                    "video.pix_fmt": "yuv420p",
-                    "video.is_depth_map": False
-                }
-            },
             "episode_index": {"dtype": "int64"},
-            "frame_index": {"dtype": "int64"},
             "timestamp": {"dtype": "float32"},
+            "task_index": {"dtype": "int64"},
             "next.done": {"dtype": "bool"},
+            "next.reward": {"dtype": "float32"},
+            "annotation.human.action.task_description": {"dtype": "string"},
+            "annotation.human.validity": {"dtype": "int64"},
             "index": {"dtype": "int64"}
-        },
-        "camera_keys": ["observation.images.main"]
+        }
     }
     
     with open(meta_dir / "info.json", "w") as f:
@@ -501,11 +501,30 @@ def main():
     
     print(f"找到 {len(episode_dirs)} 个episodes")
     
+    # 首先收集所有任务信息以创建task_map
+    print("分析任务信息...")
+    unique_tasks = set()
+    for episode_dir in episode_dirs:
+        data_json = episode_dir / "data.json"
+        if data_json.exists():
+            try:
+                episode_data_raw = parse_json_data(data_json)
+                task_info = episode_data_raw.get("text", {})
+                task_description = task_info.get("goal", "default_task")
+                unique_tasks.add(task_description)
+            except Exception as e:
+                print(f"警告: 读取episode {episode_dir} 的任务信息失败: {e}")
+                unique_tasks.add("default_task")
+    
+    # 创建task_map
+    task_map = {task: idx for idx, task in enumerate(sorted(unique_tasks))}
+    print(f"发现 {len(task_map)} 个不同的任务")
+    
     # 转换每个episode
     episode_data = []
     for i, episode_dir in enumerate(episode_dirs):
         try:
-            ep_data = convert_episode(episode_dir, i, output_dir, args.fps)
+            ep_data = convert_episode(episode_dir, i, output_dir, args.fps, task_map)
             episode_data.append(ep_data)
         except Exception as e:
             print(f"错误: 转换episode {episode_dir} 失败: {e}")
