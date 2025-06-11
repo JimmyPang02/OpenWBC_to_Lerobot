@@ -1,24 +1,34 @@
 # OpenWBC_to_Lerobot
 
-将OpenWBC格式的数据集转换为LeRobot格式的工具。
+[English](README.md) | [中文](README_CN.md)
 
-## 功能特性
+A tool for converting OpenWBC format datasets to LeRobot compatible format.
 
-- 🔄 将OpenWBC数据格式转换为LeRobot兼容格式
-- 📊 支持多维度状态向量和动作向量提取
-- 🎬 自动从图像序列生成视频文件
-- 📈 生成完整的元数据和统计信息
-- 🤖 支持多种机器人类型配置
+## 🚀 Features
 
-## 安装依赖
+- 🔄 Convert OpenWBC data format to LeRobot compatible format
+- 📊 Support multi-dimensional state vectors and action vectors extraction
+- 🎬 Automatically generate video files from image sequences
+- 📈 Generate complete metadata and statistics
+- 🤖 Support multiple robot type configurations
+
+## 📦 Installation
+
+### Install Dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## 使用方法
+### Install Package
 
-### 基本用法
+```bash
+pip install -e .
+```
+
+## 🛠️ Usage
+
+### Basic Usage
 
 ```bash
 python convert_to_lerobot.py \
@@ -29,17 +39,30 @@ python convert_to_lerobot.py \
     --fps 30
 ```
 
-### 参数说明
+### Command Line Tool
 
-- `--input_dir`: OpenWBC数据集输入目录
-- `--output_dir`: LeRobot格式输出目录
-- `--dataset_name`: 数据集名称
-- `--robot_type`: 机器人类型 (默认: "g1")
-- `--fps`: 视频帧率 (默认: 30.0)
+After installation, you can use the command line tool:
 
-## 数据格式说明
+```bash
+wbc-convert \
+    --input_dir /path/to/openwbc/dataset \
+    --output_dir ./lerobot_dataset \
+    --dataset_name "pick_cola" \
+    --robot_type "g1" \
+    --fps 30
+```
 
-### 输入格式 (OpenWBC)
+### Parameters
+
+- `--input_dir`: OpenWBC dataset input directory
+- `--output_dir`: LeRobot format output directory
+- `--dataset_name`: Dataset name
+- `--robot_type`: Robot type (default: "g1")
+- `--fps`: Video frame rate (default: 30.0)
+
+## 📁 Data Format
+
+### Input Format (OpenWBC)
 ```
 dataset/
 ├── episode_0001/
@@ -52,7 +75,7 @@ dataset/
 │   └── ...
 ```
 
-### 输出格式 (LeRobot)
+### Output Format (LeRobot)
 ```
 lerobot_dataset/
 ├── data/
@@ -71,47 +94,146 @@ lerobot_dataset/
     └── episodes_stats.jsonl
 ```
 
-## 模态配置
+## ⚙️ Modality Configuration
 
-项目包含 `modality.json` 配置文件，定义了各个模态的数据维度映射：
+The project includes a `modality.json` configuration file that defines data dimension mappings for each modality:
 
-### 状态向量 (40维)
-- left_arm: 7维关节位置
-- right_arm: 7维关节位置  
-- left_hand: 7维关节位置
-- right_hand: 7维关节位置
-- left_leg: 6维关节位置
-- right_leg: 6维关节位置
+### State Vector (40 dimensions)
+- left_arm: 7D joint positions
+- right_arm: 7D joint positions  
+- left_hand: 7D joint positions
+- right_hand: 7D joint positions
+- left_leg: 6D joint positions
+- right_leg: 6D joint positions
 
-### 动作向量 (32维)
-- left_arm: 7维关节位置
-- right_arm: 7维关节位置
-- left_hand: 7维关节位置
-- right_hand: 7维关节位置
-- base_motion: 4维控制指令
+### Action Vector (32 dimensions)
+- left_arm: 7D joint positions
+- right_arm: 7D joint positions
+- left_hand: 7D joint positions
+- right_hand: 7D joint positions
+- base_motion: 4D control commands
 
-## 示例代码
+## 📖 Example Usage
 
-转换完成后，可以这样使用数据集：
+After conversion, you can use the dataset like this:
 
 ```python
 from lerobot.common.datasets.lerobot_dataset import LeRobotDataset
 
-# 加载数据集
+# Load dataset
 dataset = LeRobotDataset('./lerobot_dataset')
-print(f'数据集大小: {len(dataset)}')
+print(f'Dataset size: {len(dataset)}')
 
-# 获取一个样本
+# Get a sample
 sample = dataset[0]
-print("状态维度:", sample['observation.state'].shape)
-print("动作维度:", sample['action'].shape)
-print("图像形状:", sample['observation.images.main'].shape)
+print("State dimensions:", sample['observation.state'].shape)
+print("Action dimensions:", sample['action'].shape)
+print("Image shape:", sample['observation.images.main'].shape)
 ```
 
-## 许可证
+## 🔧 Advanced Configuration
+
+### Custom Robot Configuration
+
+You can modify the `modality.json` file to support different robot configurations:
+
+```json
+{
+  "robot_type": "custom_robot",
+  "state_dim": 50,
+  "action_dim": 40,
+  "modalities": {
+    "state": {
+      "custom_arm": [0, 7],
+      "custom_base": [7, 13]
+    },
+    "action": {
+      "custom_arm": [0, 7],
+      "custom_base": [7, 13]
+    }
+  }
+}
+```
+
+### Batch Processing
+
+For processing multiple datasets:
+
+```python
+import os
+from pathlib import Path
+
+datasets = [
+    "/path/to/dataset1",
+    "/path/to/dataset2", 
+    "/path/to/dataset3"
+]
+
+for dataset_path in datasets:
+    dataset_name = Path(dataset_path).name
+    os.system(f"""
+    python convert_to_lerobot.py \
+        --input_dir {dataset_path} \
+        --output_dir ./converted/{dataset_name} \
+        --dataset_name {dataset_name} \
+        --robot_type g1
+    """)
+```
+
+## 🐛 Troubleshooting
+
+### Common Issues
+
+1. **Missing dependencies**: Make sure all required packages are installed
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Memory issues with large datasets**: Use chunk processing for large datasets
+   ```bash
+   # Process in smaller chunks
+   python convert_to_lerobot.py --chunk_size 100 ...
+   ```
+
+3. **Video encoding issues**: Install ffmpeg if video generation fails
+   ```bash
+   # macOS
+   brew install ffmpeg
+   
+   # Ubuntu
+   sudo apt install ffmpeg
+   ```
+
+## 🤝 Contributing
+
+We welcome contributions! Please feel free to submit Issues and Pull Requests to improve this tool.
+
+### Development Setup
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd OpenWBC_to_Lerobot
+
+# Install in development mode
+pip install -e .
+
+# Run tests (if available)
+python -m pytest tests/
+```
+
+## 📄 License
 
 MIT License
 
-## 贡献
+## 🙏 Acknowledgments
 
-欢迎提交Issue和Pull Request来改进这个工具。 
+- [LeRobot](https://github.com/huggingface/lerobot) - Robot learning framework
+- [OpenWBC](https://github.com/your-org/OpenWBC) - Original data collection system
+- Community contributors and testers
+
+## 📚 Related Projects
+
+- **[OpenWBC](https://github.com/your-org/OpenWBC)**: Complete robot teleoperation and data collection system
+- **[LeRobot](https://github.com/huggingface/lerobot)**: Robot learning framework
+- **[NVIDIA Isaac GR00T](https://github.com/NVIDIA/Isaac-GR00T)**: Foundation model for humanoid robots 
