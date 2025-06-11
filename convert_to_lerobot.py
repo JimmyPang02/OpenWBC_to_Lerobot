@@ -60,7 +60,7 @@ def extract_state_vector(states_dict):
     if 'right_leg' in states_dict and 'qpos' in states_dict['right_leg']:
         state_parts.extend(states_dict['right_leg']['qpos'])
     
-    return np.array(state_parts, dtype=np.float32)
+    return np.array(state_parts, dtype=np.float64)
 
 def extract_action_vector(actions_dict):
     """从actions字典中提取32维动作向量"""
@@ -91,7 +91,7 @@ def extract_action_vector(actions_dict):
             controller_cmd = controller_cmd[0]  # 取第一个元素
         action_parts.extend(controller_cmd)
     
-    return np.array(action_parts, dtype=np.float32)
+    return np.array(action_parts, dtype=np.float64)
 
 def convert_episode(input_episode_dir: Path, episode_idx: int, output_dir: Path, fps: float, task_map: Dict[str, int] = None) -> Dict[str, Any]:
     """转换单个episode"""
@@ -129,6 +129,7 @@ def convert_episode(input_episode_dir: Path, episode_idx: int, output_dir: Path,
         
         processed_frame = {
             "episode_index": episode_idx,
+            "frame_index": frame_idx,
             "timestamp": frame_idx / fps,  # 时间戳必须与视频帧精确对应：第frame_idx帧 = frame_idx/fps秒
             "task_index": current_task_index,
         }
@@ -173,7 +174,8 @@ def convert_episode(input_episode_dir: Path, episode_idx: int, output_dir: Path,
         
         # 为了兼容GR00T格式，添加任务描述相关字段
         if task_info and "goal" in task_info:
-            processed_frame["annotation.human.action.task_description"] = task_info["goal"]
+            # 根据官方格式，task_description应该是task_index（int64）
+            processed_frame["annotation.human.action.task_description"] = current_task_index
         
         # 添加annotation validity字段，表示人工标注的有效性
         processed_frame["annotation.human.validity"] = 1
@@ -188,8 +190,10 @@ def convert_episode(input_episode_dir: Path, episode_idx: int, output_dir: Path,
     }
 
 def create_videos_from_images(input_dir: Path, output_videos_dir: Path, episode_data: List[Dict], fps: float):
-    """从图像序列创建视频文件"""
+    """从图像序列创建视频文件，返回图像尺寸"""
     print("创建视频文件...")
+    
+    image_shape = None  # 用于存储图像尺寸信息
     
     # 为每个episode创建视频
     for ep_data in episode_data:
@@ -208,7 +212,7 @@ def create_videos_from_images(input_dir: Path, output_videos_dir: Path, episode_
             continue
         
         # 确定视频输出路径
-        video_output_dir = output_videos_dir / "chunk-000" / "observation.images.main"
+        video_output_dir = output_videos_dir / "chunk-000" / "observation.images.ego_view"
         video_output_dir.mkdir(parents=True, exist_ok=True)
         video_path = video_output_dir / f"episode_{episode_idx:06d}.mp4"
         
@@ -219,6 +223,10 @@ def create_videos_from_images(input_dir: Path, output_videos_dir: Path, episode_
             continue
         
         height, width = first_img.shape[:2]
+        
+        # 如果这是第一次获取图像尺寸，记录下来
+        if image_shape is None:
+            image_shape = [3, height, width]  # RGB, 高度, 宽度
         
         # 创建视频写入器 - 使用H.264编码以获得更好的兼容性
         fourcc = cv2.VideoWriter_fourcc(*'avc1')  # H.264编码，更兼容
@@ -237,6 +245,8 @@ def create_videos_from_images(input_dir: Path, output_videos_dir: Path, episode_
             print(f"创建视频: {video_path}")
         finally:
             video_writer.release()
+    
+    return image_shape
 
 def create_parquet_files(episode_data: List[Dict], output_data_dir: Path, videos_dir: Path):
     """创建Parquet数据文件"""
@@ -275,7 +285,7 @@ def create_parquet_files(episode_data: List[Dict], output_data_dir: Path, videos
             df.to_parquet(parquet_path, index=False)
             print(f"保存数据文件: {parquet_path}")
 
-def create_metadata_files(episode_data: List[Dict], output_dir: Path, dataset_name: str, robot_type: str, fps: float):
+def create_metadata_files(episode_data: List[Dict], output_dir: Path, dataset_name: str, robot_type: str, fps: float, image_shape=None):
     """创建元数据文件"""
     print("创建元数据文件...")
     
@@ -293,40 +303,161 @@ def create_metadata_files(episode_data: List[Dict], output_dir: Path, dataset_na
     else:
         state_dim = action_dim = 7  # 默认值
     
-    # 创建info.json
+    # 设置图像形状，如果没有提供则使用默认值
+    if image_shape is None:
+        image_shape = [3, 480, 640]  # 默认形状：RGB, 高度, 宽度
+    
+    # 收集任务数量
+    unique_tasks = set()
+    for ep_data in episode_data:
+        task_info = ep_data.get("task_info", {})
+        task_description = task_info.get("goal", f"{dataset_name}_task")
+        unique_tasks.add(task_description)
+    
+    # 创建info.json - 基于NVIDIA Isaac GR00T官方格式
+    # 调整图像shape为[height, width, channel]格式
+    if image_shape:
+        video_shape = [image_shape[1], image_shape[2], image_shape[0]]  # [height, width, channel]
+    else:
+        video_shape = [480, 640, 3]
+    
     info = {
-        "codebase_version": "v2.1",
+        "codebase_version": "v2.0",
         "robot_type": robot_type,
         "total_episodes": total_episodes,
         "total_frames": total_frames,
+        "total_tasks": len(unique_tasks),
+        "total_videos": 1,  # 我们只有一个视频流
+        "total_chunks": 1,  # 使用单个chunk
+        "chunks_size": 1000,
         "fps": fps,
         "splits": {"train": f"0:{total_episodes}"},
-        "data_path": "data/chunk-000/episode_{episode_index:06d}.parquet",
-        "video_path": "videos/chunk-000/{camera_key}/episode_{episode_index:06d}.mp4",
+        "data_path": "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet",
+        "video_path": "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4",
         "features": {
+            "observation.images.ego_view": {
+                "dtype": "video",
+                "shape": video_shape,
+                "names": ["height", "width", "channel"],
+                "video_info": {
+                    "video.fps": fps,
+                    "video.codec": "h264",
+                    "video.pix_fmt": "yuv420p",
+                    "video.is_depth_map": False,
+                    "has_audio": False
+                }
+            },
             "observation.state": {
-                "dtype": "float32",
+                "dtype": "float64",
                 "shape": [state_dim],
-                "names": [f"joint{i}" for i in range(state_dim)]
+                "names": [f"motor_{i}" for i in range(state_dim)]
             },
             "action": {
-                "dtype": "float32", 
+                "dtype": "float64", 
                 "shape": [action_dim],
-                "names": [f"action{i}" for i in range(action_dim)]
+                "names": [f"motor_{i}" for i in range(action_dim)]
             },
-            "episode_index": {"dtype": "int64"},
-            "timestamp": {"dtype": "float32"},
-            "task_index": {"dtype": "int64"},
-            "next.done": {"dtype": "bool"},
-            "next.reward": {"dtype": "float32"},
-            "annotation.human.action.task_description": {"dtype": "string"},
-            "annotation.human.validity": {"dtype": "int64"},
-            "index": {"dtype": "int64"}
+            "timestamp": {
+                "dtype": "float64",
+                "shape": [1]
+            },
+            "annotation.human.action.task_description": {
+                "dtype": "int64",
+                "shape": [1]
+            },
+            "task_index": {
+                "dtype": "int64",
+                "shape": [1]
+            },
+            "annotation.human.validity": {
+                "dtype": "int64",
+                "shape": [1]
+            },
+            "episode_index": {
+                "dtype": "int64",
+                "shape": [1]
+            },
+            "index": {
+                "dtype": "int64",
+                "shape": [1]
+            },
+            "next.reward": {
+                "dtype": "float64",
+                "shape": [1]
+            },
+            "next.done": {
+                "dtype": "bool",
+                "shape": [1]
+            }
         }
     }
     
     with open(meta_dir / "info.json", "w") as f:
         json.dump(info, f, indent=2)
+    
+    # 创建modality.json
+    modality = {
+        "state": {
+            "left_arm": {
+                "start": 0,
+                "end": 7
+            },
+            "right_arm": {
+                "start": 7,
+                "end": 14
+            },
+            "left_hand": {
+                "start": 14,
+                "end": 21
+            },
+            "right_hand": {
+                "start": 21,
+                "end": 28
+            },
+            "left_leg": {
+                "start": 28,
+                "end": 34
+            },
+            "right_leg": {
+                "start": 34,
+                "end": 40
+            }
+        },
+        "action": {
+            "left_arm": {
+                "start": 0,
+                "end": 7
+            },
+            "right_arm": {
+                "start": 7,
+                "end": 14
+            },
+            "left_hand": {
+                "start": 14,
+                "end": 21
+            },
+            "right_hand": {
+                "start": 21,
+                "end": 28
+            },
+            "base_motion": {
+                "start": 28,
+                "end": 32
+            }
+        },
+        "video": {
+            "ego_view": {
+                "original_key": "observation.images.ego_view"
+            }
+        },
+        "annotation": {
+            "human.action.task_description": {},
+            "human.validity": {}
+        }
+    }
+    
+    with open(meta_dir / "modality.json", "w") as f:
+        json.dump(modality, f, indent=4)
     
     # 创建episodes.jsonl
     with open(meta_dir / "episodes.jsonl", "w") as f:
@@ -408,7 +539,7 @@ def create_metadata_files(episode_data: List[Dict], output_dir: Path, dataset_na
                             valid_obs_states.append(numeric_obs)
                 
                 if valid_obs_states:
-                    obs_array = np.array(valid_obs_states, dtype=np.float32)
+                    obs_array = np.array(valid_obs_states, dtype=np.float64)
                     stats["stats"]["observation.state"] = {
                         "max": obs_array.max(axis=0).tolist(),
                         "min": obs_array.min(axis=0).tolist(),
@@ -444,7 +575,7 @@ def create_metadata_files(episode_data: List[Dict], output_dir: Path, dataset_na
                             valid_actions.append(numeric_action)
                 
                 if valid_actions:
-                    action_array = np.array(valid_actions, dtype=np.float32)
+                    action_array = np.array(valid_actions, dtype=np.float64)
                     stats["stats"]["action"] = {
                         "max": action_array.max(axis=0).tolist(),
                         "min": action_array.min(axis=0).tolist(),
@@ -536,14 +667,14 @@ def main():
     
     # 创建视频文件
     videos_dir = output_dir / "videos"
-    create_videos_from_images(input_dir, videos_dir, episode_data, args.fps)
+    image_shape = create_videos_from_images(input_dir, videos_dir, episode_data, args.fps)
     
     # 创建Parquet数据文件  
     data_dir = output_dir / "data"
     create_parquet_files(episode_data, data_dir, videos_dir)
     
     # 创建元数据文件
-    create_metadata_files(episode_data, output_dir, args.dataset_name, args.robot_type, args.fps)
+    create_metadata_files(episode_data, output_dir, args.dataset_name, args.robot_type, args.fps, image_shape)
     
     print(f"\n✅ 转换完成！")
     print(f"📁 输出目录: {output_dir}")
