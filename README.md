@@ -56,6 +56,7 @@ wbc-convert \
 - `--robot_type`: Robot type (default: "g1")
 - `--fps`: Video frame rate (default: 30.0)
 - `--video_enc`: Video encoding format (default: h264)
+- `--filter_file`: File path for good episode index to retain (default: filter.txt)
 
 ## 📁 Data Format
 
@@ -64,6 +65,7 @@ wbc-convert \
 dataset/
 ├── episode_0001/
 │   ├── data.json
+|   ├── filter.txt  (manully add if needed)
 │   └── colors/
 │       ├── 000000.jpg
 │       ├── 000001.jpg

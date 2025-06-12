@@ -23,6 +23,7 @@ import pandas as pd
 from PIL import Image
 import cv2
 from tqdm import tqdm
+import ast
 
 def parse_json_data(json_file: Path) -> Dict[str, Any]:
     """解析data.json文件"""
@@ -614,7 +615,8 @@ def main():
     parser.add_argument("--dataset_name", type=str, required=True, help="数据集名称")
     parser.add_argument("--robot_type", type=str, default="g1", help="机器人类型")
     parser.add_argument("--fps", type=float, default=30.0, help="视频帧率")
-    parser.add_argument("--video_enc", type=str, default='h264', help="视频编码格式")
+    parser.add_argument("--video_enc", type=str, default='h264', help="视频编码格式, 支持h264或mp4v")
+    parser.add_argument("--filter_file", type=str, default="filter.txt", help="包含允许的episode编号列表的文件名 (相对于input_dir)")
     
     args = parser.parse_args()
     
@@ -628,19 +630,52 @@ def main():
     # 创建输出目录
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # 获取所有episode目录
-    episode_dirs = sorted([d for d in input_dir.iterdir() if d.is_dir() and d.name.startswith("episode_")])
-    
-    if not episode_dirs:
-        print(f"错误: 在 {input_dir} 中找不到episode目录")
+    filter_file_path = input_dir / args.filter_file
+    filter_episode_numbers = None
+    if filter_file_path.exists():
+        try:
+            with open(filter_file_path, 'r', encoding='utf-8') as f_filter:
+                file_content = f_filter.read().strip()
+                filter_episode_numbers = ast.literal_eval(file_content)
+                if not isinstance(filter_episode_numbers, list) or not all(isinstance(n, int) for n in filter_episode_numbers):
+                    print(f"警告: {filter_file_path} 内容格式不正确, 应为整数列表。将处理所有episode。")
+                    filter_episode_numbers = None
+                else:
+                    print(f"从 {filter_file_path} 加载了 {len(filter_episode_numbers)} 个要处理的episode编号。")
+        except Exception as e:
+            print(f"警告: 读取或解析 {filter_file_path} 失败: {e}。将处理所有episode。")
+            filter_episode_numbers = None
+    else:
+        print(f"提示: 过滤文件 {filter_file_path} 未找到。将尝试处理所有episode。")
+
+    all_potential_episode_dirs = sorted(
+        [d for d in input_dir.iterdir() if d.is_dir() and d.name.startswith("episode_")]
+    )
+
+    episode_dirs_to_process = []
+    if filter_episode_numbers is not None:
+        for ep_dir in all_potential_episode_dirs:
+            try:
+                # Assuming episode name is like "episode_01" or "episode_1"
+                ep_num_str = ep_dir.name.split('_')[-1]
+                ep_num = int(ep_num_str)
+                if ep_num in filter_episode_numbers:
+                    episode_dirs_to_process.append(ep_dir)
+            except ValueError:
+                print(f"警告: 无法从目录名 {ep_dir.name} 解析episode编号。")
+        print(f"根据过滤文件，将处理 {len(episode_dirs_to_process)} 个episodes。")
+    else:
+        episode_dirs_to_process = all_potential_episode_dirs
+        print(f"将处理所有找到的 {len(episode_dirs_to_process)} 个episodes。")
+
+    if not episode_dirs_to_process:
+        print(f"错误: 在 {input_dir} 中找不到符合条件的episode目录进行处理。")
         return
-    
-    print(f"找到 {len(episode_dirs)} 个episodes")
     
     # 首先收集所有任务信息以创建task_map
     print("分析任务信息...")
     unique_tasks = set()
-    for episode_dir in episode_dirs:
+    for episode_dir in episode_dirs_to_process:
         data_json = episode_dir / "data.json"
         if data_json.exists():
             try:
@@ -658,7 +693,7 @@ def main():
     
     # 转换每个episode
     episode_data = []
-    for i, episode_dir in enumerate(episode_dirs):
+    for i, episode_dir in enumerate(episode_dirs_to_process):
         try:
             ep_data = convert_episode(episode_dir, i, output_dir, args.fps, task_map)
             episode_data.append(ep_data)
