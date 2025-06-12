@@ -48,6 +48,7 @@ python convert_to_lerobot.py \
 - `--robot_type`: 机器人类型 (默认: "g1")
 - `--fps`: 视频帧率 (默认: 30.0)
 - `--video_enc`: 视频编码格式 (默认: h264)
+- `--filter_file`: 记录所有好数据编号的文件路径 (默认: filter.txt)
 
 ## 数据格式说明
 
@@ -56,6 +57,7 @@ python convert_to_lerobot.py \
 dataset/
 ├── episode_0001/
 │   ├── data.json
+|   ├── filter.txt (如需要可手工添加)
 │   └── colors/
 │       ├── 000000.jpg
 │       ├── 000001.jpg
