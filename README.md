@@ -12,19 +12,6 @@ A tool for converting OpenWBC format datasets to LeRobot compatible format.
 - 📈 Generate complete metadata and statistics
 - 🤖 Support multiple robot type configurations
 
-## 📦 Installation
-
-### Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### Install Package
-
-```bash
-pip install -e .
-```
 
 ## 🛠️ Usage
 
