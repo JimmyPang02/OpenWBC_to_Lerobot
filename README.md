@@ -15,6 +15,14 @@ A tool for converting OpenWBC format datasets to LeRobot compatible format.
 
 ## 🛠️ Usage
 
+### (Optional) Rename the Task
+if you want to train multitask dataset, and rename the task goal, run:
+```bash
+python task_rename_preprocess.py \
+    --dataset_path /path/to/openwbc/dataset \
+    --task "pick_cola"
+```
+
 ### Basic Usage
 
 ```bash
@@ -23,7 +31,8 @@ python convert_to_lerobot.py \
     --output_dir ./lerobot_dataset \
     --dataset_name "pick_cola" \
     --robot_type "g1" \
-    --fps 30
+    --fps 30 \
+    --video_enc 'h264'
 ```
 
 ### Command Line Tool
@@ -46,6 +55,7 @@ wbc-convert \
 - `--dataset_name`: Dataset name
 - `--robot_type`: Robot type (default: "g1")
 - `--fps`: Video frame rate (default: 30.0)
+- `--video_enc`: Video encoding format (default: h264)
 
 ## 📁 Data Format
 

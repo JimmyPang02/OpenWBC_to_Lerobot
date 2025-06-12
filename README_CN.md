@@ -20,6 +20,14 @@ pip install -r requirements.txt
 
 ## 使用方法
 
+### (可选) 任务重命名
+如果你想进行多任务训练并重命名数据的描述，运行：
+```bash
+python task_rename_preprocess.py \
+    --dataset_path /path/to/openwbc/dataset \
+    --task "pick_cola"
+```
+
 ### 基本用法
 
 ```bash
@@ -28,7 +36,8 @@ python convert_to_lerobot.py \
     --output_dir ./lerobot_dataset \
     --dataset_name "pick_cola" \
     --robot_type "g1" \
-    --fps 30
+    --fps 30 \
+    --video_enc 'h264'
 ```
 
 ### 参数说明
@@ -38,6 +47,7 @@ python convert_to_lerobot.py \
 - `--dataset_name`: 数据集名称
 - `--robot_type`: 机器人类型 (默认: "g1")
 - `--fps`: 视频帧率 (默认: 30.0)
+- `--video_enc`: 视频编码格式 (默认: h264)
 
 ## 数据格式说明
 

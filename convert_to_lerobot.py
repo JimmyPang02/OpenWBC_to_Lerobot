@@ -189,7 +189,7 @@ def convert_episode(input_episode_dir: Path, episode_idx: int, output_dir: Path,
         "task_info": task_info
     }
 
-def create_videos_from_images(input_dir: Path, output_videos_dir: Path, episode_data: List[Dict], fps: float):
+def create_videos_from_images(input_dir: Path, output_videos_dir: Path, episode_data: List[Dict], fps: float, code_type: str='h264'):
     """从图像序列创建视频文件，返回图像尺寸"""
     print("创建视频文件...")
     
@@ -229,7 +229,11 @@ def create_videos_from_images(input_dir: Path, output_videos_dir: Path, episode_
             image_shape = [3, height, width]  # RGB, 高度, 宽度
         
         # 创建视频写入器 - 使用H.264编码以获得更好的兼容性
-        fourcc = cv2.VideoWriter_fourcc(*'avc1')  # H.264编码，更兼容
+        if code_type=='h264':
+            fourcc = cv2.VideoWriter_fourcc(*'avc1') 
+        elif code_type=='mp4v':
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    
         video_writer = cv2.VideoWriter(str(video_path), fourcc, fps, (width, height))
         
         try:
@@ -285,7 +289,7 @@ def create_parquet_files(episode_data: List[Dict], output_data_dir: Path, videos
             df.to_parquet(parquet_path, index=False)
             print(f"保存数据文件: {parquet_path}")
 
-def create_metadata_files(episode_data: List[Dict], output_dir: Path, dataset_name: str, robot_type: str, fps: float, image_shape=None):
+def create_metadata_files(episode_data: List[Dict], output_dir: Path, dataset_name: str, robot_type: str, fps: float, image_shape=None, code_type: str='h264'):
     """创建元数据文件"""
     print("创建元数据文件...")
     
@@ -341,7 +345,7 @@ def create_metadata_files(episode_data: List[Dict], output_dir: Path, dataset_na
                 "names": ["height", "width", "channel"],
                 "video_info": {
                     "video.fps": fps,
-                    "video.codec": "h264",
+                    "video.codec": code_type,
                     "video.pix_fmt": "yuv420p",
                     "video.is_depth_map": False,
                     "has_audio": False
@@ -610,12 +614,13 @@ def main():
     parser.add_argument("--dataset_name", type=str, required=True, help="数据集名称")
     parser.add_argument("--robot_type", type=str, default="g1", help="机器人类型")
     parser.add_argument("--fps", type=float, default=30.0, help="视频帧率")
+    parser.add_argument("--video_enc", type=str, default='h264', help="视频编码格式")
     
     args = parser.parse_args()
     
     input_dir = Path(args.input_dir)
     output_dir = Path(args.output_dir)
-    
+    print('video:', args.video_enc)
     if not input_dir.exists():
         print(f"错误: 输入目录不存在: {input_dir}")
         return
@@ -667,14 +672,15 @@ def main():
     
     # 创建视频文件
     videos_dir = output_dir / "videos"
-    image_shape = create_videos_from_images(input_dir, videos_dir, episode_data, args.fps)
+    image_shape = create_videos_from_images(input_dir, videos_dir, episode_data, args.fps, code_type=args.video_enc)
+
     
     # 创建Parquet数据文件  
     data_dir = output_dir / "data"
     create_parquet_files(episode_data, data_dir, videos_dir)
     
     # 创建元数据文件
-    create_metadata_files(episode_data, output_dir, args.dataset_name, args.robot_type, args.fps, image_shape)
+    create_metadata_files(episode_data, output_dir, args.dataset_name, args.robot_type, args.fps, image_shape, code_type=args.video_enc)
     
     print(f"\n✅ 转换完成！")
     print(f"📁 输出目录: {output_dir}")
